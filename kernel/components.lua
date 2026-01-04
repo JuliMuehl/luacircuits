@@ -159,7 +159,7 @@ setmetatable(VoltageSource,Component)
 ---@returns VoltageSource
 ---@param voltage_func function(t : number) : number
 function VoltageSource.new(voltage_func)
-    func = func or function(t) return 5.0 end --Default V(t) = 5V
+    voltage_func = voltage_func or function(t) return 5.0 end --Default V(t) = 5V
     ---@type VoltageSource
     return setmetatable({voltage_func=voltage_func},VoltageSource)
 end

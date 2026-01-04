@@ -149,15 +149,6 @@ function GMResSolver:backsubstitute(x,k)
         end
         self.y[row] = self.y[row] / self.arnoldiH[row][row]
     end
-    local test = {}
-    for i=1,k do
-        local row = k+1-i
-        test[row] = 0
-        for j = 1,i do
-            local col = k+1-j
-            test[row] = test[row] + self.arnoldiH[col][row] * self.y[col]
-        end
-    end
     for i=1,#x do
         local sum = 0
         for j=1,k do

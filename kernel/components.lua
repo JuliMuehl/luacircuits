@@ -186,11 +186,17 @@ end
 ---@field current number
 ---@field parasitic_capacitance
 ---Default values from spice
-Diode = setmetatable({saturation_current = 1e-14, itv = 0.025865, current=0,nonlinear=true },Component)
+Diode = setmetatable({
+    saturation_current = 1e-14,
+    itv = 1.0 / 25.856e-3,
+    nonlinear=true },Component)
 Diode.__index = Diode
 
 function Diode.new(saturation_current,itv)
-    return setmetatable({saturation_current = saturation_current,itv = itv},Diode)
+    return setmetatable({
+        saturation_current = saturation_current,
+        current = 0,
+        itv = itv},Diode)
 end
 
 ---@param time number
@@ -204,7 +210,7 @@ function Diode:initialize_currents(time,time_step,currents,voltages)
     local curr = self.current + parasitic_current
     increment_current(currents,node1,-curr)
     increment_current(currents,node2,curr)
-    self.current = (math.exp(self.itv*voltage)-1)*self.saturation_current
+    self.current = (math.exp(self.itv*voltage) - 1) * self.saturation_current
 end
 
 ---@param time number
@@ -213,9 +219,8 @@ end
 ---@param currents number[]
 function Diode:linmap_step(time,time_step,currents,voltages)
     local node1, node2 = self.terminals[1],self.terminals[2]
-    local parasitic_conductance = 1e-2 * self.saturation_current
     local voltage = get_voltage(voltages,node2) - get_voltage(voltages,node1)
-    local conductance = self.itv*(self.current + self.saturation_current) + parasitic_conductance
+    local conductance = self.itv*(self.current + self.saturation_current)
     increment_current(currents,node1,-conductance * voltage)
     increment_current(currents,node2,conductance * voltage)
 end

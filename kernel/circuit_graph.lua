@@ -182,7 +182,7 @@ function CircuitGraph:implicit_euler_step()
     end
     self:newton_step()
     if self.nonlinear then
-        for i=1,self.num_newton_iters do
+        for i=1,self.num_newton_iters-1 do
             self:newton_step()
         end
     end

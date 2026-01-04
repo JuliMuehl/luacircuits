@@ -47,8 +47,9 @@ setmetatable(Capacitor,Component)
 Capacitor.__index = Capacitor
 
 ---@returns Capacitor
----@param capacitance number 
+---@param capacitance number | nil
 function Capacitor.new(capacitance)
+    capacitance = capacitance or 1e-12 --Default 1muF
     return setmetatable({capacitance = capacitance},Capacitor)
 end
 
@@ -89,9 +90,10 @@ setmetatable(Inductor,Component)
 Inductor.__index = Inductor
 
 ---@returns Inductor
----@param inductance number 
+---@param inductance number | nil
 ---@params current number | nil
 function Inductor.new(inductance,current)
+    inductance = inductance or 1e-2 --Default 10mH
     current = current or 0
     return setmetatable({inductance = inductance, current=current},Inductor)
 end
@@ -130,8 +132,9 @@ Resistor.__index = Resistor
 setmetatable(Resistor,Component)
 
 ---@returns Resistor
----@param resistance number 
+---@param resistance number | nil
 function Resistor.new(resistance)
+    resistance = resistance or 1000 --Default 1kOhm
     return setmetatable({resistance = resistance},Resistor)
 end
 
@@ -156,6 +159,7 @@ setmetatable(VoltageSource,Component)
 ---@returns VoltageSource
 ---@param voltage_func function(t : number) : number
 function VoltageSource.new(voltage_func)
+    func = func or function(t) return 5.0 end --Default V(t) = 5V
     ---@type VoltageSource
     return setmetatable({voltage_func=voltage_func},VoltageSource)
 end

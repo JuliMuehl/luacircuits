@@ -6,7 +6,7 @@ require("kernel.krylov")
 ---@field private connections {[string]:boolean}
 ---@field private node_map {[string]:integer} | nil
 ---@field private self.num_unique_nodes integer[] | nil
----@field private ground_terminal string | nil
+---@field public ground_terminal string | nil
 ---@field private voltages number[] | nil
 ---@field private currents number[] | nil
 ---@field public time_step number

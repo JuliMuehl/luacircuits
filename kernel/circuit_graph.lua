@@ -63,8 +63,11 @@ end
 
 ---@return number
 ---@param comp integer
----@param terminal integer
+---@param terminal integer | nil
 function CircuitGraph:get_voltage(comp,terminal)
+    if terminal == nil then
+        return self:get_voltage(comp,2) - self:get_voltage(comp,1)
+    end
     if self.ground_terminal == nil then
         error("Ground terminal is required in order to compute voltages!")
     end

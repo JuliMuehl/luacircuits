@@ -6,7 +6,7 @@ require("kernel.krylov")
 ---@field private connections {[string]:boolean}
 ---@field private node_map {[string]:integer} | nil
 ---@field private self.num_unique_nodes integer[] | nil
----@field public ground_terminal string | nil
+---@field private ground_terminal string | nil
 ---@field private voltages number[] | nil
 ---@field private currents number[] | nil
 ---@field public time_step number
@@ -59,6 +59,13 @@ end
 ---@param terminal integer
 function CircuitGraph:set_ground_terminal(comp,terminal)
     self.ground_terminal = comp .. ":" .. terminal
+end
+
+function CircuitGraph:get_ground_terminal()
+    if self.ground_terminal then
+        local comp, term = self.ground_terminal:match("(%d):(%d)")
+        return tonumber(comp), tonumber(term)
+    end
 end
 
 ---@return number

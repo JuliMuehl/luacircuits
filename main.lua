@@ -6,6 +6,7 @@ local top_bar_height = 100
 local scrollbar = {
     selected = false,
     width = 10,
+    height = 1,
     x = side_pane_width - 10,
     y = top_bar_height
 }
@@ -128,7 +129,7 @@ local buttons = {
     size = 40,
     play_hovered = false,
     pause_hovered = false,
-    stop_hovered = false,
+    paused = false
 }
 
 --For the following methods x,y refers to the top right corner
@@ -160,7 +161,9 @@ function buttons:draw_stop_button(x,y,size)
 end
 
 function buttons:draw_pause_button(x,y,size)
-    if self.pause_hovered then
+    if self.paused then
+        love.graphics.setColor(0.1,0.1,0.6)
+    elseif self.pause_hovered  then
         love.graphics.setColor(0.5,0.5,1.0)
     else
         love.graphics.setColor(0.3,0.3,0.9)
@@ -170,6 +173,11 @@ function buttons:draw_pause_button(x,y,size)
     x,y = x + size/2,y + size/2
     love.graphics.line(x-0.1*size,y-0.3*size,x-0.1*size,y+0.3*size)
     love.graphics.line(x+0.1*size,y-0.3*size,x+0.1*size,y+0.3*size)
+end
+
+function buttons:draw()
+    buttons:draw_play_button(cvsx + 0*buttons.size,cvsy,buttons.size)
+    buttons:draw_pause_button(cvsx + 1*buttons.size,cvsy,buttons.size)
 end
 
 function buttons:check_mouse(mousex,mousey)
@@ -184,11 +192,6 @@ function buttons:check_mouse(mousex,mousey)
     local xpause, ypause = xplay - buttons.size , yplay
     if 0 <= xpause and xpause <= buttons.size and 0 <= ypause and ypause <= buttons.size then
         self.pause_hovered = true
-        return true
-    end
-    local xstop, ystop = xplay - 2*buttons.size , yplay
-    if 0 <= xstop and xstop <= buttons.size and 0 <= ystop and ystop <= buttons.size then
-        self.stop_hovered =  true
         return true
     end
     return false
@@ -222,42 +225,15 @@ function Scrollbar.new(direction,xinit,yinit,width,height,min_scroll,max_scroll)
     return self
 end
 
-function Scrollbar:draw()
-    love.rectangle(self.x,self.y,self.width,self.height)
-end
-
-function Scrollbar:mousedown(x,y,button)
-    if button == 1 then
-        if self.x <= x and x <= self.x + self.width then
-            self.pressed = true
-        end
-    end
-end
-
-function Scrollbar:mousemoved(x,y,dx,dy)
-    if self.pressed and self.scroll_x then
-        self.x = math.max(math.min(self.x + dx,self.max_scroll),self.min_scroll)
-    end
-    if self.pressed and self.scroll_y then
-        self.y = math.max(math.min(self.y + dy,self.max_scroll),self.min_scroll)
-    end
-end
-
-function Scrollbar:mousereleased()
-    if self.pressed then
-        self.pressed = false
-    end
-end
-
-
-
 local function draw_plot(values, max, plot_size, offsetx, offsety)
     local centery = offsety + 0.5 * plot_size
-    local h = plot_size/ (#values-1)
     local x = offsetx
-    for i=1,#values-1 do
-        local y1 = centery - values[i] / max  * plot_size/2
-        local y2 = centery - values[i+1] / max * plot_size/2
+    local n = math.min(#values-1,100)
+    local h = plot_size / n
+    local m = math.floor(#values - 1)/n
+    for i=1,n do
+        local y1 = centery - 0.9 * values[1 + math.floor((i-1)*m)] / max  * plot_size/2
+        local y2 = centery - 0.9 * values[1 + math.floor(i*m)] / max * plot_size/2
         local x1 = x
         local x2 = x + h
         love.graphics.line(x1,y1,x2,y2)
@@ -273,11 +249,15 @@ end
 ---@field draw_func fun(x:number, y:number, size:number)
 ---@field selected boolean
 ---@field is_fresh boolean
+---@field model Component | nil
+---@field voltages number[] | nil
 RenderComponent = {
     ---@type RenderComponent|nil
     _selected_component = nil,
     ---@type RenderComponent|nil
     _hovered_component = nil,
+    ---@type RenderComponent|nil
+    _plotted_component = nil,
     _hovered_terminal = {},
     _selected_terminal = {},
     ---@type string | nil
@@ -289,20 +269,24 @@ RenderComponent = {
         Capacitor = draw_capacitor,
         Inductor = draw_inductor,
         Diode = draw_diode,
-        Ground = draw_ground
-    }
+        Ground = draw_ground,
+    },
 }
 
 RenderComponent.__index = RenderComponent
 
 function RenderComponent.new(type,xinit,yinit,size,is_fresh)
-    local self = setmetatable({},RenderComponent)
+    local self = setmetatable({}, RenderComponent)
     self.type = type
     self.x = xinit
     self.y = yinit
     self.size = size
     self.is_fresh = is_fresh or false
     self.draw_func = RenderComponent._draw_funcs[type]
+    self.voltages = {}
+    if type ~= "Ground" then
+        self.model = components[type].new()
+    end
     return self
 end
 
@@ -341,6 +325,10 @@ function RenderComponent:is_hovered()
     return RenderComponent._hovered_component == self
 end
 
+function RenderComponent:is_plotted()
+    return RenderComponent._plotted_component == self
+end
+
 function RenderComponent:terminal_is_hovered(term)
     return RenderComponent._hovered_terminal.comp == self and RenderComponent._hovered_terminal.term == term
 end
@@ -367,6 +355,10 @@ end
 
 function RenderComponent:render(offsetx,offsety)
     if self:is_hovered() then
+        local cornerx, cornery = self.x + offsetx - self.size/2, self.y + offsety - self.size/2
+        love.graphics.rectangle("line",cornerx,cornery,self.size,self.size)
+    end
+    if self:is_plotted() then
         local cornerx, cornery = self.x + offsetx - self.size/2, self.y + offsety - self.size/2
         love.graphics.rectangle("line",cornerx,cornery,self.size,self.size)
     end
@@ -399,22 +391,26 @@ function RenderComponent:render(offsetx,offsety)
     self.draw_func(offsetx+self.x,offsety+self.y,self.size)
 end
 
-local rendercomponents = {
+rendercomponents = {
     RenderComponent.new("Ground",50,buttons.size+50,100,100),
     RenderComponent.new("Capacitor",200,200,100),
     RenderComponent.new("Resistor",200,300,100)
 }
-local connections = {
+connections = {
     ["1:1,2:1"] = true,
 }
+
+local function parse_connection(conn)
+    local comp1,term1,comp2,term2 = conn:match("(%d+):(%d+),(%d+):(%d+)")
+    return tonumber(comp1), tonumber(term1), tonumber(comp2), tonumber(term2)
+end
 
 local function draw_connections()
     for conn,_ in pairs(connections) do
         if conn == RenderComponent._hovered_connection then
             love.graphics.setColor(1.0,0.0,0.0)
         end
-        local comp1,term1,comp2,term2 = conn:match("(%d+):(%d+),(%d+):(%d+)")
-        comp1, term1, comp2, term2 = tonumber(comp1), tonumber(term1), tonumber(comp2), tonumber(term2)
+        local comp1, term1, comp2, term2 = parse_connection(conn)
         local termx1,termy1 = rendercomponents[comp1]:get_term_position(term1,cvsx,cvsy)
         local termx2,termy2 = rendercomponents[comp2]:get_term_position(term2,cvsx,cvsy)
         love.graphics.line(termx1,termy1,termx2,termy2)
@@ -438,31 +434,26 @@ local function component_index(comp)
     end
 end
 
-local removedcomponents = {}
 local function remove_component(comp)
     local compi = component_index(comp)
-    removedcomponents[compi] = true
+    local newconnections = {}
     for conn,_ in pairs(connections) do
-        local comp1,term1,comp2,term2 = conn:match("(%d+):(%d+),(%d+):(%d+)")
-        comp1, term1, comp2, term2 = tonumber(comp1), tonumber(term1), tonumber(comp2), tonumber(term2)
-        if comp1 == compi or comp2 == compi then
-            connections[conn] = nil
+        local comp1,term1,comp2,term2 = parse_connection(conn)
+        if comp1 ~= compi and comp2 ~= compi then
+            if comp1 > compi then
+                comp1 = comp1 - 1
+            end
+            if comp2 > compi then
+                comp2 = comp2 - 1
+            end
+            local newconn = comp1 .. ":" .. term1 .. "," .. comp2 .. ":" .. term2
+            newconnections[newconn] = true
         end
     end
-end
-
-local function iter_components() local i = 1
-    return function()
-        while removedcomponents[i] do
-            i = i + 1
-        end
-        if i > #rendercomponents then
-            return nil
-        end
-        local comp = rendercomponents[i]
-        i = i + 1
-        return comp
-    end
+    connections = newconnections
+    table.remove(rendercomponents,compi)
+    simulation.network = nil
+    simulation.plot_data = {}
 end
 
 function love.mousepressed(x,y,button,istouch,presses)
@@ -470,12 +461,21 @@ function love.mousepressed(x,y,button,istouch,presses)
         local conn = RenderComponent._hovered_connection
         if conn ~= nil then
             connections[conn] = nil
+            simulation.network = nil
+            simulation.plot_data = {}
         else
             remove_component(RenderComponent._hovered_component)
         end
     end
     if button == 1 then
-        local scrollbarxcond = scrollbar.x <= x   and x <= scrollbar.x + scrollbar.width 
+        if buttons.pause_hovered then
+            buttons.paused = not buttons.paused
+        end
+        if buttons.play_hovered then
+            simulation:initialize()
+            buttons.paused = false
+        end
+        local scrollbarxcond = scrollbar.x <= x   and x <= scrollbar.x + scrollbar.width
         local scrollbarycond = scrollbar.y <= y and y <= scrollbar.y + scrollbar.height
         if  scrollbarxcond and scrollbarycond then
             scrollbar.selected = true
@@ -537,11 +537,17 @@ end
 
 function love.mousemoved(x,y,dx,dy)
     if scrollbar.selected then
+        local y = scrollbar.y + dy
         scrollbar.y = math.min(math.max(y,top_bar_height),love.graphics.getHeight() - scrollbar.height)
         return
     end
     if buttons:check_mouse(x,y) then
         return
+    end
+    local plot_component = simulation:check_mouse(x,y)
+    RenderComponent._plotted_component = nil
+    if plot_component then
+        RenderComponent._plotted_component = rendercomponents[plot_component]
     end
     local selected = RenderComponent._selected_component
     if selected ~= nil then
@@ -555,7 +561,7 @@ function love.mousemoved(x,y,dx,dy)
         RenderComponent._hovered_component = nil
         RenderComponent._hovered_terminal.comp = nil
         RenderComponent._hovered_terminal.term = nil
-        for comp in iter_components() do
+        for _,comp in ipairs(rendercomponents) do
             local terminal = comp:check_mouse_terminal(x,y,cvsx,cvsy)
             if terminal then
                 RenderComponent._hovered_terminal.comp = comp
@@ -596,42 +602,70 @@ function love.mousereleased(x,y,button,istouch,presses)
     end
 end
 
-function draw_components()
+local function draw_components()
     love.graphics.setColor(0, 0, 0)
-    for comp in iter_components() do
+    for _,comp in ipairs(rendercomponents) do
         comp:render(cvsx,cvsy)
     end
 end
 
-local example_currents = {}
-local example_voltages = {}
-for i=1,100 do
-    example_currents[i] = math.sin(i*2.0*math.pi/100)
-    example_voltages[i] = math.cos(i*2.0*math.pi/100)
+simulation = {
+    network = nil,
+    plot_data = {}
+}
+
+function simulation:initialize()
+    simulation.network = CircuitGraph.new()
+    simulation.plot_data = {}
+    for i=2,#rendercomponents do
+        local comp = rendercomponents[i]
+        simulation.plot_data[i-1] = {voltages={},currents = {}}
+        simulation.network:add_component(comp.model)
+    end
+    for conn,_ in pairs(connections) do
+        local comp1,term1,comp2,term2 = parse_connection(conn)
+        --Check for ground connection
+        local gcomp,gterm = simulation.network:get_ground_terminal()
+        if comp1 == 1 then
+            if  gcomp == nil then
+                simulation.network:set_ground_terminal(comp2-1,term2)
+            else
+                simulation.network:add_connection(gcomp,gterm,comp2-1,term2)
+            end
+        elseif comp2 == 1 then
+            if gcomp == nil then
+                simulation.network:set_ground_terminal(comp1-1,term1)
+            else
+                simulation.network:add_connection(gcomp,gterm,comp1-1,term1)
+            end
+        else
+            simulation.network:add_connection(comp1-1,term1,comp2-1,term2)
+        end
+    end
+    simulation.network.time_step = 1e-12
+    local status,err = pcall(simulation.network.compute_nodes,simulation.network)
+    if not status then
+        love.window.showMessageBox("Error",err)
+        simulation.network = nil
+        simulation.plot_data = {}
+    end
 end
 
-local plot_data = {
-    {
-        currents = example_currents,
-        voltages = example_voltages
-    },
-    {
-        currents = example_currents,
-        voltages = example_voltages
-    },
-    {
-        currents = example_currents,
-        voltages = example_voltages
-    },
-    {
-        currents = example_currents,
-        voltages = example_voltages
-    },
-    {
-        currents = example_currents,
-        voltages = example_voltages
-    }
-}
+function simulation:check_mouse(mousex,mousey)
+    if 0 <= mousex and mousex <= side_pane_width then
+        local h = love.graphics.getHeight()
+        local plot_size = side_pane_width - scrollbar.width
+        local total_plot_height = plot_size * (#simulation.plot_data)
+        local side_pane_height = h - top_bar_height
+        local scroll_percentage = (scrollbar.y - top_bar_height) / (side_pane_height - scrollbar.height)
+        for i,data in ipairs(self.plot_data) do
+            local y = top_bar_height - (total_plot_height - side_pane_height) * scroll_percentage + (i-1) * plot_size
+            if y <= mousey and mousey <= y + plot_size then
+                return i+1
+            end
+        end
+    end
+end
 
 local function draw_ui()
     local w,h = love.graphics.getWidth(), love.graphics.getHeight()
@@ -641,13 +675,13 @@ local function draw_ui()
     local side_pane_height = h - top_bar_height
     --scroll bar
     local plot_size = side_pane_width - scrollbar.width
-    local total_plot_height = plot_size * #plot_data
+    local total_plot_height = plot_size * (#simulation.plot_data)
     scrollbar.height = math.min(side_pane_height/total_plot_height,1.0)*side_pane_height
     love.graphics.setColor(0.8,0.8,0.8)
     love.graphics.rectangle("fill",scrollbar.x,scrollbar.y,scrollbar.width,scrollbar.height)
     local scroll_percentage = (scrollbar.y - top_bar_height) / (side_pane_height - scrollbar.height)
     --plots
-    for i,data in ipairs(plot_data) do
+    for i,data in ipairs(simulation.plot_data) do
         local y = top_bar_height - (total_plot_height - side_pane_height)* scroll_percentage + (i-1) * plot_size
         love.graphics.setColor(0.1, 0.1, 0.1)
         love.graphics.rectangle("fill",0,y,plot_size,plot_size)
@@ -656,7 +690,11 @@ local function draw_ui()
         love.graphics.setColor(0.8, 0.8, 0.2)
         draw_plot(data.currents,1,plot_size,0,y)
         love.graphics.setColor(0.8, 0.2, 0.2)
-        draw_plot(data.voltages,1,plot_size,0,y)
+        local max_voltage = data.max_voltage
+        if max_voltage == 0 then
+            max_voltage = 1
+        end
+        draw_plot(data.voltages,max_voltage,plot_size,0,y)
     end
     --top bar
     love.graphics.setColor(0.8, 0.8, 0.8)
@@ -666,9 +704,7 @@ local function draw_ui()
         component:render(10,0)
     end
     --Play, Pause, Stop Buttons
-    buttons:draw_play_button(cvsx + 0*buttons.size,cvsy,buttons.size)
-    buttons:draw_pause_button(cvsx + 1*buttons.size,cvsy,buttons.size)
-    buttons:draw_stop_button(cvsx + 2*buttons.size,cvsy,buttons.size)
+    buttons:draw()
 end
 
 function love.load()
@@ -686,6 +722,22 @@ function love.load()
     for i,type in pairs(component_prototypes) do
         local x, y = get_prototype_position(i)
         table.insert(prototype_components,RenderComponent.new(type,x,y,100))
+    end
+end
+
+function love.update()
+    if simulation.network ~= nil and not buttons.paused then
+        simulation.network:implicit_euler_step()
+        for i=2,#rendercomponents do
+            local data = simulation.plot_data[i-1]
+            local v = simulation.network:get_voltage(i-1)
+            local absv = math.abs(v)
+            if data.max_voltage == nil then
+                data.max_voltage = absv
+            end
+            data.max_voltage = math.max(data.max_voltage,absv)
+            table.insert(data.voltages,v)
+        end
     end
 end
 

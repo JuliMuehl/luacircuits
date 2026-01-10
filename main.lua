@@ -464,10 +464,20 @@ function love.mousepressed(x,y,button,istouch,presses)
             simulation.network = nil
             simulation.plot_data = {}
         else
-            remove_component(RenderComponent._hovered_component)
+            component_dialog.component = RenderComponent._hovered_component
+            --remove_component(RenderComponent._hovered_component)
         end
     end
     if button == 1 then
+        if component_dialog.component ~= nil then
+            if component_dialog.close_button.hovered then
+                component_dialog.component = nil
+            elseif component_dialog.remove_button.hovered then
+                remove_component(component_dialog.component)
+                component_dialog.component = nil
+            end
+            return
+        end
         if buttons.pause_hovered then
             buttons.paused = not buttons.paused
         end
@@ -536,6 +546,9 @@ end
 
 
 function love.mousemoved(x,y,dx,dy)
+    if component_dialog.component ~= nil then
+        component_dialog:check_mouse(x,y)
+    end
     if scrollbar.selected then
         local y = scrollbar.y + dy
         scrollbar.y = math.min(math.max(y,top_bar_height),love.graphics.getHeight() - scrollbar.height)
@@ -707,6 +720,108 @@ local function draw_ui()
     buttons:draw()
 end
 
+local font = love.graphics.getFont()
+component_dialog = {
+    component = nil,
+    size = 500,
+    padding = 10,
+    close_button = {
+        size = 25,
+        hovered = false,
+    },
+    remove_button = {
+        text = "Remove Component",
+        width = font:getWidth("Remove Component"),
+        height = font:getHeight(),
+        hovered = false,
+    },
+    text_field = {
+        text = "",
+        width = 100,
+        cursor = 0,
+        cursor_width = 10
+    }
+}
+
+function component_dialog:check_mouse(mousex,mousey)
+    local w,h = love.graphics.getWidth(),love.graphics.getHeight()
+    local dialogx, dialogy = w/2 - self.size/2, h/2 - self.size/2
+    local closex = dialogx + component_dialog.size - component_dialog.close_button.size
+    local closey = dialogy
+    local closexcheck = closex <= mousex and mousex <= closex + self.close_button.size
+    local closeycheck = closey <= mousey and mousey <= closey + self.close_button.size
+    self.close_button.hovered = closexcheck and closeycheck
+    local removebuttonx = dialogx + component_dialog.size/2 - component_dialog.remove_button.width/2
+    local removebuttony = dialogy + component_dialog.size - component_dialog.remove_button.height
+    local removexcheck = removebuttonx <= mousex and mousex <= removebuttonx + self.remove_button.width
+    local removeycheck = removebuttony <= mousey and mousey <= removebuttony + self.remove_button.height
+    self.remove_button.hovered = removexcheck and removeycheck
+end
+
+local function draw_component_dialog()
+    if component_dialog.component then
+        local w,h = love.graphics.getWidth(),love.graphics.getHeight()
+        local dialogx, dialogy = w/2 - component_dialog.size/2, h/2 - component_dialog.size/2
+        love.graphics.setColor(0.2,0.2,0.2)
+        love.graphics.rectangle("fill",dialogx,dialogy,component_dialog.size,component_dialog.size)
+        if component_dialog.close_button.hovered then
+            love.graphics.setColor(0.9,0.5,0.5)
+        else
+            love.graphics.setColor(0.7,0.3,0.3)
+        end
+        love.graphics.rectangle(
+            "fill",
+            dialogx + component_dialog.size - component_dialog.close_button.size,
+            dialogy,
+            component_dialog.close_button.size,
+            component_dialog.close_button.size
+        )
+        love.graphics.setColor(0.9,0.9,0.9)
+        love.graphics.line(
+            dialogx + component_dialog.size - component_dialog.close_button.size,
+            dialogy,
+            dialogx + component_dialog.size,
+            dialogy + component_dialog.close_button.size
+        )
+        love.graphics.line(
+            dialogx + component_dialog.size ,
+            dialogy,
+            dialogx + component_dialog.size - component_dialog.close_button.size,
+            dialogy + component_dialog.close_button.size
+        )
+        local uiycoord = dialogy
+        local type = component_dialog.component.type
+        local typenamewidth = font:getWidth(type)
+        local typenameheight = font:getHeight()
+        love.graphics.print(type,dialogx + component_dialog.size/2 - typenamewidth/2,dialogy)
+        uiycoord = uiycoord + typenameheight  + component_dialog.padding
+        if component_dialog.component.type == "Resistor" then
+            local resistance = component_dialog.component.model.resistance
+            local resistancestr = tostring(resistance)
+            local resistancewidth = font:getWidth(resistancestr)
+            local text = "Resistance = " .. resistancestr
+            local textwidth = font:getWidth(text)
+            love.graphics.print(text,dialogx + component_dialog.size/2 - textwidth/2,uiycoord)
+        end
+        if component_dialog.remove_button.hovered then
+            love.graphics.setColor(0.9,0.5,0.5)
+        else
+            love.graphics.setColor(0.7,0.3,0.3)
+        end
+        local removebuttonx = dialogx + component_dialog.size/2 - component_dialog.remove_button.width/2
+        local removebuttony = dialogy + component_dialog.size - component_dialog.remove_button.height
+        love.graphics.rectangle(
+            "fill",
+            removebuttonx,
+            removebuttony,
+            component_dialog.remove_button.width,
+            component_dialog.remove_button.height
+        )
+        love.graphics.setColor(0.9,0.9,0.9)
+        love.graphics.print(component_dialog.remove_button.text,removebuttonx,removebuttony)
+    end
+end
+
 function love.load()
     love.window.setMode(1024,720,{resizable=true})
     love.window.setTitle("Lua Circuit Simulator")
@@ -727,7 +842,13 @@ end
 
 function love.update()
     if simulation.network ~= nil and not buttons.paused then
-        simulation.network:implicit_euler_step()
+        local status, err = pcall(simulation.network.implicit_euler_step,simulation.network)
+        if not status then
+            love.window.showMessageBox("Error",err)
+            simulation.network = nil
+            simulation.plot_data = {}
+            return
+        end
         for i=2,#rendercomponents do
             local data = simulation.plot_data[i-1]
             local v = simulation.network:get_voltage(i-1)
@@ -745,4 +866,5 @@ function love.draw()
     draw_ui()
     draw_components()
     draw_connections()
+    draw_component_dialog()
 end
